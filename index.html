@@ -7,6 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Tone.js para efectos de sonido -->
     <script src="https://unpkg.com/tone@14.9.1/build/Tone.js"></script>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
         body {
@@ -301,6 +302,65 @@
     <script>
         // --- Lógica del juego ---
         document.addEventListener('DOMContentLoaded', () => {
+            // Socket.IO: Conexión al servidor
+            const socket = io('http://localhost:3000');
+
+            // Sincroniza el estado del juego al recibirlo del servidor
+            socket.on('gameState', (state) => {
+                // Actualiza nombres y puntajes de equipos
+                state.teams.forEach((team, idx) => {
+                    const nameDisplay = document.getElementById(`team-name-${idx+1}-display`);
+                    const nameInput = document.getElementById(`team-name-input-${idx+1}`);
+                    nameDisplay.textContent = team.name;
+                    nameInput.value = team.name;
+                    const scoreElement = document.getElementById(`score-${idx+1}`);
+                    scoreElement.textContent = team.score;
+                    const progressElement = document.getElementById(`progress-${idx+1}`);
+                    const maxScore = state.questions.reduce((sum, q) => sum + q.points, 0) || 1;
+                    const progressPercentage = (team.score / maxScore) * 100;
+                    progressElement.style.width = `${progressPercentage}%`;
+                });
+
+                // Actualiza pregunta y opciones
+                if (state.questions.length > 0 && state.currentQuestionIndex < state.questions.length) {
+                    const currentQuestion = state.questions[state.currentQuestionIndex];
+                    panelTitle.textContent = `PREGUNTA ${state.currentQuestionIndex + 1}:`;
+                    panelMessage.textContent = currentQuestion.text;
+                    const allOptions = [currentQuestion.correct_answer, ...currentQuestion.incorrect_answers];
+                    // Mezclar opciones para todos igual
+                    allOptions.sort();
+                    optionButtons.forEach((button, index) => {
+                        button.classList.remove('selected', 'correct', 'incorrect');
+                        const span = button.querySelector('span');
+                        if (span) span.textContent = allOptions[index];
+                        button.disabled = true;
+                    });
+                    optionsContainer.classList.remove('hidden');
+                }
+
+                // Refleja el equipo activo (buzzer)
+                if (state.activeTeam) {
+                    buzzerIcon.classList.remove('hidden');
+                    document.getElementById(state.activeTeam).classList.add('active-glow');
+                } else {
+                    buzzerIcon.classList.add('hidden');
+                    teams.forEach(team => {
+                        document.getElementById(team.cardId).classList.remove('active-glow');
+                    });
+                }
+
+                // Sincroniza avance de preguntas y ganador
+                if (state.currentQuestionIndex >= state.questions.length) {
+                    panelTitle.textContent = "¡Fin del juego!";
+                    panelMessage.textContent = "Todas las preguntas han sido respondidas. El ganador es...";
+                    let winner = state.teams.reduce((a, b) => a.score > b.score ? a : b);
+                    winnerText.textContent = `¡El equipo ${winner.name} ha ganado la yincana!`;
+                    winnerPopup.classList.remove('hidden');
+                } else {
+                    winnerPopup.classList.add('hidden');
+                }
+            });
+
             // Configuración del juego
             const teams = [
                 { id: 'team-1', color: 'teal', score: 0, buzzerId: 'buzzer-1', cardId: 'team-1', videoId: 'video-stream-1', nameInputId: 'team-name-input-1' },
@@ -814,6 +874,9 @@
                     optionButtons.forEach(button => {
                         button.disabled = false;
                     });
+
+                    // Cuando un equipo presiona el buzzer
+                    socket.emit('buzzer', team.id);
                 });
             });
 
@@ -864,6 +927,13 @@
                 });
                 
                 explainButton.disabled = false;
+
+                // Cuando se responde una pregunta
+                socket.emit('answer', {
+                    teamId: activeTeam.id,
+                    isCorrect,
+                    points: currentQuestion.points
+                });
             });
 
             // Funcionalidad del botón de reiniciar
@@ -886,10 +956,16 @@
                 nextQuestionButton.disabled = true;
                 optionsContainer.classList.add('hidden');
                 checkAnswerButton.classList.add('hidden');
+
+                // Cuando se reinicia el juego
+                socket.emit('restart');
             });
             
             // Nuevos listeners de eventos
-            generateQuestionsButton.addEventListener('click', generateQuestions);
+            generateQuestionsButton.addEventListener('click', async () => {
+                await generateQuestions();
+                socket.emit('setQuestions', questions);
+            });
             ttsButton.addEventListener('click', readQuestion);
             explainButton.addEventListener('click', explainAnswer);
             
