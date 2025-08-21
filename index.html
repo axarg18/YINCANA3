@@ -211,6 +211,13 @@
             </div>
         </div>
         
+        <!-- Contenedor dinámico para cámaras de usuarios -->
+        <div id="video-users-container" class="flex flex-wrap gap-4 mb-8 justify-center items-center">
+            <button id="add-user-btn" class="bg-green-600 rounded-full w-16 h-16 flex items-center justify-center text-white text-3xl hover:bg-green-700 focus:outline-none">
+                +
+            </button>
+        </div>
+
         <!-- Panel de Control -->
         <div id="control-panel" class="card p-6 md:p-8 rounded-2xl shadow-lg mb-8 text-center flex flex-col items-center">
             <div class="w-32 h-32 md:w-40 md:h-40 flex items-center justify-center overflow-hidden mb-4">
@@ -301,21 +308,120 @@
 
     <script>
         // --- Lógica del juego ---
-        document.addEventListener('DOMContentLoaded', () => {
-            // Socket.IO: Conexión al servidor
+        document.addEventListener('DOMContentLoaded', async () => {
             const socket = io('http://localhost:3000');
+            const MAX_USERS = 6;
+            let localStream;
+            const peers = {};
+            const videoUsersContainer = document.getElementById('video-users-container');
+            const addUserBtn = document.getElementById('add-user-btn');
+
+            // Solicita cámara al hacer clic en el botón +
+            addUserBtn.addEventListener('click', async () => {
+                if (localStream) return;
+                try {
+                    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                    // Crea el video local
+                    const localVideo = document.createElement('video');
+                    localVideo.id = 'video-local';
+                    localVideo.autoplay = true;
+                    localVideo.muted = true;
+                    localVideo.className = "rounded-lg border-2 border-green-500 w-40 h-32";
+                    localVideo.srcObject = localStream;
+                    videoUsersContainer.insertBefore(localVideo, addUserBtn);
+                    addUserBtn.style.display = 'none';
+                    socket.emit('join-room');
+                } catch (err) {
+                    alert("No se pudo acceder a la cámara.");
+                }
+            });
+
+            // Crea un video remoto
+            function createVideoElement(id) {
+                let video = document.getElementById('video-' + id);
+                if (!video) {
+                    video = document.createElement('video');
+                    video.id = 'video-' + id;
+                    video.autoplay = true;
+                    video.className = "rounded-lg border-2 border-green-500 w-40 h-32";
+                    videoUsersContainer.appendChild(video);
+                }
+                return video;
+            }
+
+            // Recibe la lista de usuarios y crea conexiones
+            socket.on('users', async (userIds) => {
+                for (const id of userIds) {
+                    await createPeerConnection(id, true);
+                }
+            });
+
+            // Cuando un usuario nuevo entra
+            socket.on('user-joined', async (id) => {
+                await createPeerConnection(id, false);
+            });
+
+            // Oferta recibida
+            socket.on('offer', async ({ from, offer }) => {
+                await createPeerConnection(from, false, offer);
+            });
+
+            // Respuesta recibida
+            socket.on('answer', async ({ from, answer }) => {
+                if (peers[from]) {
+                    await peers[from].setRemoteDescription(new RTCSessionDescription(answer));
+                }
+            });
+
+            // ICE candidate recibida
+            socket.on('ice-candidate', async ({ from, candidate }) => {
+                if (peers[from]) {
+                    await peers[from].addIceCandidate(new RTCIceCandidate(candidate));
+                }
+            });
+
+            // Cuando un usuario se desconecta
+            socket.on('user-left', (id) => {
+                if (peers[id]) {
+                    peers[id].close();
+                    delete peers[id];
+                    const video = document.getElementById('video-' + id);
+                    if (video) video.remove();
+                }
+            });
+
+            // Crea la conexión WebRTC con otro usuario
+            async function createPeerConnection(id, isInitiator, remoteOffer) {
+                if (!localStream || Object.keys(peers).length >= MAX_USERS) return;
+                if (peers[id]) return;
+                const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+                peers[id] = pc;
+                localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+                pc.ontrack = (event) => {
+                    let video = document.getElementById('video-' + id);
+                    if (!video) video = createVideoElement(id);
+                    video.srcObject = event.streams[0];
+                };
+                pc.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        socket.emit('ice-candidate', { to: id, candidate: event.candidate });
+                    }
+                };
+                if (isInitiator) {
+                    const offer = await pc.createOffer();
+                    await pc.setLocalDescription(offer);
+                    socket.emit('offer', { to: id, offer });
+                } else if (remoteOffer) {
+                    await pc.setRemoteDescription(new RTCSessionDescription(remoteOffer));
+                    const answer = await pc.createAnswer();
+                    await pc.setLocalDescription(answer);
+                    socket.emit('answer', { to: id, answer });
+                }
+            }
 
             // --- WebRTC para compartir cámaras entre usuarios ---
-            let localStream;
             let peerConnection;
             const configuration = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
-
-            // Obtener cámara local y mostrar en video-stream-1
-            navigator.mediaDevices.getUserMedia({ video: true, audio: false }).then(stream => {
-                localStream = stream;
-                document.getElementById('video-stream-1').srcObject = stream;
-                socket.emit('join-room');
-            });
 
             // Señalización con Socket.IO
             socket.on('offer', async (offer) => {
