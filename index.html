@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Yincana Virtual de Prueba: Mente en Competencia</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tone.js para efectos de sonido -->
+    <script src="https://unpkg.com/tone@14.9.1/build/Tone.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #111827;
+            color: #E5E7EB;
+        }
+        .container {
+            max-width: 900px;
+        }
+        .card {
+            background-color: #1F2937;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: all 0.3s ease;
+        }
+        .progress-bar {
+            height: 10px;
+            background-color: #374151;
+            border-radius: 9999px;
+            overflow: hidden;
+        }
+        .progress {
+            height: 100%;
+            background-color: #10B981;
+            transition: width 0.5s ease-in-out;
+        }
+        .button {
+            transition: all 0.3s ease;
+        }
+        .button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 14px rgba(16, 185, 129, 0.4);
+        }
+        .button:active {
+            transform: translateY(0);
+        }
+        .buzzer-button.disabled {
+            background-color: #4B5563;
+            cursor: not-allowed;
+        }
+        .active-glow {
+            animation: pulse-glow 2s infinite;
+            border: 2px solid #10B981;
+        }
+        @keyframes pulse-glow {
+            0% { box-shadow: 0 0 5px #10B981, 0 0 10px #10B981; }
+            50% { box-shadow: 0 0 10px #10B981, 0 0 20px #10B981; }
+            100% { box-shadow: 0 0 5px #10B981, 0 0 10px #10B981; }
+        }
+        .loader {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid #10B981;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .options-button {
+            background-color: #374151;
+            white-space: normal; /* Permite que el texto se ajuste a varias líneas */
+            text-align: center;
+        }
+        .options-button.selected {
+            background-color: #4B5563;
+            border: 2px solid #6B7280;
+        }
+        .options-button.correct {
+            background-color: #10B981;
+            border: 2px solid #059669;
+        }
+        .options-button.incorrect {
+            background-color: #EF4444;
+            border: 2px solid #DC2626;
+        }
+        
+        /* Overlay de retroalimentación en pantalla completa */
+        .feedback-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(5px);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease;
+        }
+        .feedback-overlay.show {
+            opacity: 1;
+            visibility: visible;
+        }
+        .feedback-icon {
+            font-size: 10rem;
+            line-height: 1;
+            margin-bottom: 2rem;
+            animation-duration: 0.5s;
+            animation-fill-mode: both;
+        }
+        .feedback-correct .feedback-icon {
+            color: #10B981;
+            animation-name: bounce-in;
+        }
+        .feedback-incorrect .feedback-icon {
+            color: #EF4444;
+            animation-name: shake-x;
+        }
+        .feedback-message {
+            font-size: 2.5rem;
+            font-weight: bold;
+            text-shadow: 0 0 10px rgba(0,0,0,0.5);
+        }
+        
+        /* Keyframes de animación */
+        @keyframes bounce-in {
+            0%, 20%, 40%, 60%, 80%, 100% {
+                transition-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1);
+            }
+            0% {
+                opacity: 0;
+                transform: scale3d(0.3, 0.3, 0.3);
+            }
+            20% {
+                transform: scale3d(1.1, 1.1, 1.1);
+            }
+            40% {
+                transform: scale3d(0.9, 0.9, 0.9);
+            }
+            60% {
+                opacity: 1;
+                transform: scale3d(1.03, 1.03, 1.03);
+            }
+            80% {
+                transform: scale3d(0.97, 0.97, 0.97);
+            }
+            100% {
+                opacity: 1;
+                transform: scale3d(1, 1, 1);
+            }
+        }
+        @keyframes shake-x {
+            from, to {
+                transform: translate3d(0, 0, 0);
+            }
+            10%, 30%, 50%, 70%, 90% {
+                transform: translate3d(-10px, 0, 0);
+            }
+            20%, 40%, 60%, 80% {
+                transform: translate3d(10px, 0, 0);
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-200">
+
+    <!-- Overlay de retroalimentación en pantalla completa -->
+    <div id="feedback-overlay" class="feedback-overlay">
+        <span id="feedback-icon" class="feedback-icon"></span>
+        <div id="feedback-message" class="feedback-message"></div>
+    </div>
+
+    <!-- Contenedor principal -->
+    <div class="container mx-auto p-4 md:p-8">
+        <div class="text-center mb-10">
+            <h1 class="text-3xl md:text-5xl font-bold mb-2 text-white">Yincana Virtual de Prueba: Concurso</h1>
+            <p class="text-lg md:text-xl text-gray-400">¡Buzzer para responder y gana puntos!</p>
+        </div>
+        
+        <!-- Sección de características impulsadas por Gemini -->
+        <div class="card p-6 md:p-8 rounded-2xl shadow-lg mb-8">
+            <h2 class="text-xl md:text-2xl font-bold text-green-400 mb-4">Preguntas Dinámicas ✨</h2>
+            <div class="flex flex-col md:flex-row gap-4 items-center">
+                <input type="text" id="topic-input" placeholder="Ej: Historia, Ciencia, Arte..." class="flex-grow p-3 rounded-lg bg-gray-700 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500">
+                <button id="generate-questions-button" class="button bg-green-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 flex items-center justify-center space-x-2">
+                    <span id="generate-text">Generar Preguntas ✨</span>
+                    <div id="generate-loader" class="loader hidden"></div>
+                </button>
+            </div>
+            <p id="generate-feedback" class="text-sm mt-3 text-white">Ingresa un tema y presiona el botón para generar las preguntas.</p>
+        </div>
+
+        <!-- Feeds de cámara en vivo -->
+        <div class="card p-4 md:p-6 rounded-2xl shadow-lg mb-8 flex flex-col md:flex-row justify-around items-center space-y-4 md:space-y-0 md:space-x-4">
+            <div class="w-full text-center">
+                <h3 class="text-lg font-bold mb-2 text-teal-400">Cámara Equipo 1</h3>
+                <video id="video-stream-1" autoplay muted class="w-full rounded-lg shadow-inner border-2 border-teal-500" style="width: 200px; height: 150px;"></video>
+            </div>
+            <div class="w-full text-center">
+                <h3 class="text-lg font-bold mb-2 text-indigo-400">Cámara Equipo 2</h3>
+                <video id="video-stream-2" autoplay muted class="w-full rounded-lg shadow-inner border-2 border-indigo-500" style="width: 200px; height: 150px;"></video>
+            </div>
+        </div>
+        
+        <!-- Panel de Control -->
+        <div id="control-panel" class="card p-6 md:p-8 rounded-2xl shadow-lg mb-8 text-center flex flex-col items-center">
+            <div class="w-32 h-32 md:w-40 md:h-40 flex items-center justify-center overflow-hidden mb-4">
+                <!-- Icono de buzzer. Se mostrará cuando un equipo presione el buzzer -->
+                <svg id="buzzer-icon" class="w-full h-full text-yellow-400 hidden" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M10 2a8 8 0 100 16 8 8 0 000-16zM5 10a5 5 0 0110 0v1a2 2 0 01-2 2H7a2 0 01-2-2v-1zm5-2a2 2 0 11-4 0 2 2 0 014 0z"/>
+                </svg>
+            </div>
+            <h2 id="panel-title" class="text-xl md:text-2xl font-bold text-teal-400 mb-2">Esperando...</h2>
+            <p id="panel-message" class="text-lg text-white">Primero genera preguntas con un tema.</p>
+        </div>
+
+        <!-- Opciones de opción múltiple -->
+        <div id="options-container" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8 hidden">
+            <button id="option-a" class="options-button button text-white font-bold py-4 px-6 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400 text-lg">
+                <span id="option-a-text"></span>
+            </button>
+            <button id="option-b" class="options-button button text-white font-bold py-4 px-6 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400 text-lg">
+                <span id="option-b-text"></span>
+            </button>
+            <button id="option-c" class="options-button button text-white font-bold py-4 px-6 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400 text-lg">
+                <span id="option-c-text"></span>
+            </button>
+            <button id="option-d" class="options-button button text-white font-bold py-4 px-6 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400 text-lg">
+                <span id="option-d-text"></span>
+            </button>
+        </div>
+        
+        <!-- Botones de control del juego -->
+        <div class="text-center mb-8 flex flex-col sm:flex-row gap-4 justify-center items-center">
+            <button id="next-question-button" class="button bg-green-600 text-white font-bold py-3 px-8 rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 text-lg disabled" disabled>Siguiente Pregunta</button>
+            <button id="tts-button" class="button bg-blue-600 text-white font-bold py-3 px-8 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg disabled" disabled>Leer Pregunta en Voz Alta 🔊</button>
+            <button id="check-answer-button" class="button bg-yellow-600 text-white font-bold py-3 px-8 rounded-lg hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-yellow-500 text-lg disabled hidden" disabled>Comprobar Respuesta ✅</button>
+            <button id="explain-button" class="button bg-purple-600 text-white font-bold py-3 px-8 rounded-lg hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 text-lg disabled" disabled>Explicar Respuesta ✨</button>
+        </div>
+
+        <!-- Visualización de la explicación -->
+        <div id="explanation-container" class="card p-6 md:p-8 rounded-2xl shadow-lg mb-8 hidden">
+            <h3 class="text-xl font-bold text-purple-400 mb-2">Explicación de la Respuesta</h3>
+            <div id="explanation-content" class="text-white text-base"></div>
+            <div id="explanation-loader" class="loader mt-4 mx-auto hidden"></div>
+        </div>
+
+        <div id="game-container" class="space-y-8">
+            <!-- Tarjeta del Equipo 1 -->
+            <div id="team-1" class="card p-6 md:p-8 rounded-2xl shadow-lg">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 id="team-name-1-display" class="text-xl md:text-2xl font-bold text-teal-400">Equipo 1</h2>
+                    <span id="score-1" class="text-2xl md:text-3xl font-extrabold text-white">0</span>
+                </div>
+                <!-- Campo de entrada para editar el nombre del equipo -->
+                <input type="text" id="team-name-input-1" placeholder="Los Intelectuales" class="w-full p-2 mb-4 rounded-lg bg-gray-700 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-500">
+                <div class="progress-bar mb-4">
+                    <div id="progress-1" class="progress" style="width: 0%;"></div>
+                </div>
+                <button id="buzzer-1" class="buzzer-button bg-teal-500 w-full text-white font-bold py-4 rounded-lg hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-500 text-xl md:text-2xl disabled" disabled>¡Buzzer!</button>
+            </div>
+
+            <!-- Tarjeta del Equipo 2 -->
+            <div id="team-2" class="card p-6 md:p-8 rounded-2xl shadow-lg">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 id="team-name-2-display" class="text-xl md:text-2xl font-bold text-indigo-400">Equipo 2</h2>
+                    <span id="score-2" class="text-2xl md:text-3xl font-extrabold text-white">0</span>
+                </div>
+                <!-- Campo de entrada para editar el nombre del equipo -->
+                <input type="text" id="team-name-input-2" placeholder="Los Genios" class="w-full p-2 mb-4 rounded-lg bg-gray-700 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <div class="progress-bar mb-4">
+                    <div id="progress-2" class="progress" style="width: 0%;"></div>
+                </div>
+                <button id="buzzer-2" class="buzzer-button bg-indigo-500 w-full text-white font-bold py-4 rounded-lg hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-xl md:text-2xl disabled" disabled>¡Buzzer!</button>
+            </div>
+        </div>
+
+        <!-- Pop-up para el ganador -->
+        <div id="winner-popup" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center hidden">
+            <div class="bg-gray-800 p-8 rounded-2xl text-center shadow-2xl transform scale-95 md:scale-100 transition-transform duration-300">
+                <h3 class="text-4xl font-extrabold text-yellow-400 mb-4 animate-bounce">¡Felicidades!</h3>
+                <p id="winnerText" class="text-3xl font-bold text-white mb-6">El equipo X ha ganado la yincana!</p>
+                <button id="restart-button" class="button bg-green-600 text-white font-bold py-3 px-8 rounded-lg hover:bg-green-700">Jugar de Nuevo</button>
+            </div>
+        </div>
+
+        <!-- Elementos de lienzo ocultos para el acceso a la cámara -->
+        <canvas id="camera-canvas-1" style="display: none;"></canvas>
+        <canvas id="camera-canvas-2" style="display: none;"></canvas>
+
+    </div>
+
+    <script>
+        // --- Lógica del juego ---
+        document.addEventListener('DOMContentLoaded', () => {
+            // Configuración del juego
+            const teams = [
+                { id: 'team-1', color: 'teal', score: 0, buzzerId: 'buzzer-1', cardId: 'team-1', videoId: 'video-stream-1', nameInputId: 'team-name-input-1' },
+                { id: 'team-2', color: 'indigo', score: 0, buzzerId: 'buzzer-2', cardId: 'team-2', videoId: 'video-stream-2', nameInputId: 'team-name-input-2' }
+            ];
+
+            const questions = [];
+            let maxScore = 0;
+            let currentQuestionIndex = 0;
+            let buzzerLocked = true; // Inicialmente, los buzzers están bloqueados
+            let activeTeam = null;
+            let selectedAnswer = null;
+
+            // Elementos de la interfaz de usuario
+            const panelTitle = document.getElementById('panel-title');
+            const panelMessage = document.getElementById('panel-message');
+            const buzzerIcon = document.getElementById('buzzer-icon');
+            const nextQuestionButton = document.getElementById('next-question-button');
+            const winnerPopup = document.getElementById('winner-popup');
+            const winnerText = document.getElementById('winnerText');
+            const restartButton = document.getElementById('restart-button');
+            const generateQuestionsButton = document.getElementById('generate-questions-button');
+            const generateLoader = document.getElementById('generate-loader');
+            const generateText = document.getElementById('generate-text');
+            const topicInput = document.getElementById('topic-input');
+            const generateFeedback = document.getElementById('generate-feedback');
+            const ttsButton = document.getElementById('tts-button');
+            const explainButton = document.getElementById('explain-button');
+            const checkAnswerButton = document.getElementById('check-answer-button');
+            const optionsContainer = document.getElementById('options-container');
+
+            // Mapeo de IDs de botones a IDs de spans de texto
+            const optionElements = {
+                'option-a': document.getElementById('option-a-text'),
+                'option-b': document.getElementById('option-b-text'),
+                'option-c': document.getElementById('option-c-text'),
+                'option-d': document.getElementById('option-d-text')
+            };
+
+            const optionButtons = [
+                document.getElementById('option-a'),
+                document.getElementById('option-b'),
+                document.getElementById('option-c'),
+                document.getElementById('option-d')
+            ];
+            
+            const explanationContainer = document.getElementById('explanation-container');
+            const explanationContent = document.getElementById('explanation-content');
+            const explanationLoader = document.getElementById('explanation-loader');
+            const feedbackOverlay = document.getElementById('feedback-overlay');
+            const feedbackIcon = document.getElementById('feedback-icon');
+            const feedbackMessage = document.getElementById('feedback-message');
+            
+            // Elementos de la interfaz de usuario para los nombres de los equipos
+            const teamNameDisplay1 = document.getElementById('team-name-1-display');
+            const teamNameInput1 = document.getElementById('team-name-input-1');
+            const teamNameDisplay2 = document.getElementById('team-name-2-display');
+            const teamNameInput2 = document.getElementById('team-name-input-2');
+            
+            // Actualizar el nombre del equipo en la pantalla al escribir en el input
+            teamNameInput1.addEventListener('input', (e) => {
+                teamNameDisplay1.textContent = e.target.value || "Equipo 1";
+            });
+            teamNameInput2.addEventListener('input', (e) => {
+                teamNameDisplay2.textContent = e.target.value || "Equipo 2";
+            });
+
+            // Streams de cámara
+            let videoStreams = {};
+
+            // --- Efectos de sonido ---
+            const correctSound = new Tone.MembraneSynth({
+                "pitchDecay": 0.008,
+                "octaves": 2,
+                "envelope": {
+                    "attack": 0.0005,
+                    "decay": 0.4,
+                    "sustain": 0
+                }
+            }).toDestination();
+            const incorrectSound = new Tone.MetalSynth({
+                "frequency": 200,
+                "envelope": {
+                    "attack": 0.001,
+                    "decay": 0.1,
+                    "release": 0.01
+                }
+            }).toDestination();
+
+            // --- Funciones de la cámara ---
+            async function setupCameraForTeam(teamId) {
+                const team = teams.find(t => t.id === teamId);
+                if (!team) return;
+
+                const videoElement = document.getElementById(team.videoId);
+                if (!videoElement) return;
+
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
+                    videoElement.srcObject = stream;
+                    videoStreams[teamId] = stream;
+                    console.log(`Acceso a la cámara concedido para el ${team.name}.`);
+                } catch (err) {
+                    console.error(`Error al acceder a la cámara para el ${team.name}:`, err);
+                    videoElement.style.display = 'none';
+                }
+            }
+
+            // Función de ayuda para decodificar base64 a ArrayBuffer
+            function base64ToArrayBuffer(base64) {
+                const binary_string = atob(base64);
+                const len = binary_string.length;
+                const bytes = new Uint8Array(len);
+                for (let i = 0; i < len; i++) {
+                    bytes[i] = binary_string.charCodeAt(i);
+                }
+                return bytes.buffer;
+            }
+
+            // Función de ayuda para convertir PCM a formato WAV
+            function pcmToWav(pcm16, sampleRate) {
+                const dataLength = pcm16.length * 2;
+                const buffer = new ArrayBuffer(44 + dataLength);
+                const view = new DataView(buffer);
+                const format = 1; // PCM
+                const channels = 1;
+                const bitsPerSample = 16;
+                const byteRate = sampleRate * channels * bitsPerSample / 8;
+                const blockAlign = channels * bitsPerSample / 8;
+
+                // Escribir encabezado RIFF
+                view.setUint32(0, 0x46464952, true); // "RIFF"
+                view.setUint32(4, 36 + dataLength, true); // tamaño del archivo
+                view.setUint32(8, 0x45564157, true); // "WAVE"
+
+                // Escribir sub-chunk FMT
+                view.setUint32(12, 0x20746d66, true); // "fmt "
+                view.setUint32(16, 16, true); // tamaño del sub-chunk
+                view.setUint16(20, format, true);
+                view.setUint16(22, channels, true);
+                view.setUint32(24, sampleRate, true);
+                view.setUint32(28, byteRate, true);
+                view.setUint16(32, blockAlign, true);
+                view.setUint16(34, bitsPerSample, true);
+
+                // Escribir sub-chunk de datos
+                view.setUint32(36, 0x61746164, true); // "data"
+                view.setUint32(40, dataLength, true); // tamaño del sub-chunk
+
+                // Escribir datos PCM
+                let offset = 44;
+                for (let i = 0; i < pcm16.length; i++) {
+                    view.setInt16(offset, pcm16[i], true);
+                    offset += 2;
+                }
+                return new Blob([view], { type: 'audio/wav' });
+            }
+
+            // Función para actualizar la interfaz de usuario de un equipo específico
+            function updateTeamUI(team) {
+                const scoreElement = document.getElementById(`score-${team.id.split('-')[1]}`);
+                const progressElement = document.getElementById(`progress-${team.id.split('-')[1]}`);
+                scoreElement.textContent = team.score;
+                const progressPercentage = (team.score / maxScore) * 100;
+                progressElement.style.width = `${progressPercentage}%`;
+            }
+
+            // Función para habilitar todos los buzzers
+            function enableBuzzers() {
+                buzzerLocked = false;
+                teams.forEach(team => {
+                    const buzzer = document.getElementById(team.buzzerId);
+                    buzzer.disabled = false;
+                    buzzer.classList.remove('disabled');
+                });
+                activeTeam = null;
+                // Restablecer el brillo de la tarjeta y la sección de explicación
+                teams.forEach(team => {
+                    document.getElementById(team.cardId).classList.remove('active-glow');
+                });
+                explanationContainer.classList.add('hidden');
+                explanationContent.textContent = '';
+                explainButton.disabled = true;
+                
+                buzzerIcon.classList.add('hidden'); // Ocultar el icono del buzzer
+            }
+
+            // Función para verificar si hay un ganador
+            function checkWinner() {
+                for (const team of teams) {
+                    if (team.score >= maxScore) {
+                        const teamName = document.getElementById(team.nameInputId).value || document.getElementById(team.nameInputId).placeholder;
+                        winnerText.textContent = `¡El equipo ${teamName} ha ganado la yincana!`;
+                        winnerPopup.classList.remove('hidden');
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            // Función para mezclar un array
+            function shuffleArray(array) {
+                for (let i = array.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [array[i], array[j]] = [array[j], array[i]];
+                }
+            }
+
+            // --- Llamada a la API de Gemini para generar preguntas ---
+            async function generateQuestions() {
+                const topic = topicInput.value.trim();
+                if (!topic) {
+                    generateFeedback.textContent = "Por favor, ingresa un tema.";
+                    return;
+                }
+                
+                generateQuestionsButton.disabled = true;
+                nextQuestionButton.disabled = true;
+                generateLoader.classList.remove('hidden');
+                generateText.textContent = "Generando...";
+                generateFeedback.textContent = "";
+
+                // El prompt ahora utiliza la estructura proporcionada por el usuario
+                const prompt = `Genera en español 5 preguntas de trivia de dificultad variada sobre el tema "${topic}". Cada pregunta debe tener una respuesta correcta y tres respuestas incorrectas. El formato de respuesta debe ser un arreglo JSON estricto, sin ninguna otra información ni explicación. Cada objeto debe tener los siguientes campos: id, text, correct_answer, incorrect_answers, points.`;
+                
+                const chatHistory = [];
+                chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+                
+                const payload = {
+                    contents: chatHistory,
+                    generationConfig: {
+                        responseMimeType: "application/json",
+                        responseSchema: {
+                            type: "ARRAY",
+                            items: {
+                                type: "OBJECT",
+                                properties: {
+                                    "id": { "type": "NUMBER" },
+                                    "text": { "type": "STRING" },
+                                    "correct_answer": { "type": "STRING" },
+                                    "incorrect_answers": {
+                                        "type": "ARRAY",
+                                        "items": { "type": "STRING" },
+                                        "minItems": 3,
+                                        "maxItems": 3
+                                    },
+                                    "points": { "type": "NUMBER" }
+                                },
+                                "propertyOrdering": ["id", "text", "correct_answer", "incorrect_answers", "points"]
+                            }
+                        }
+                    }
+                };
+                
+                const apiKey = "AIzaSyCKHAPJJs8Upl_Y4u9JSW2lgcjBSuCilIg"; 
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        console.error('Error de respuesta de la API:', errorData);
+                        throw new Error(`Error HTTP: ${response.status} - ${errorData?.error?.message || 'Error desconocido'}`);
+                    }
+
+                    const result = await response.json();
+                    const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+                    const parsedQuestions = JSON.parse(text);
+
+                    // Validar que la respuesta es un array y tiene la estructura correcta
+                    if (!Array.isArray(parsedQuestions) || !parsedQuestions.every(q => q.text && q.correct_answer && q.incorrect_answers)) {
+                        throw new Error("Respuesta de la API con formato incorrecto. Por favor, inténtalo de nuevo.");
+                    }
+
+                    questions.length = 0;
+                    questions.push(...parsedQuestions);
+                    maxScore = questions.reduce((sum, q) => sum + q.points, 0);
+                    currentQuestionIndex = 0;
+                    
+                    generateFeedback.textContent = "¡Preguntas generadas con éxito! Haz clic en 'Siguiente Pregunta' para empezar.";
+                    nextQuestionButton.disabled = false;
+                } catch (error) {
+                    console.error("Error al generar preguntas:", error);
+                    generateFeedback.textContent = `Error al generar preguntas. Detalles: ${error.message}. Por favor, inténtalo de nuevo.`;
+                } finally {
+                    generateQuestionsButton.disabled = false;
+                    generateLoader.classList.add('hidden');
+                    generateText.textContent = "Generar Preguntas ✨";
+                }
+            }
+            
+            // --- Llamada a la API de Gemini para Text-to-Speech ---
+            async function readQuestion() {
+                if (buzzerLocked) {
+                    return;
+                }
+                
+                ttsButton.disabled = true;
+                
+                const currentQuestion = questions[currentQuestionIndex - 1]; // Usar la pregunta actual
+                if (!currentQuestion) {
+                    return;
+                }
+                
+                const prompt = `Say in a clear voice: ${currentQuestion.text}`;
+
+                const payload = {
+                    contents: [{ parts: [{ text: prompt }] }],
+                    generationConfig: {
+                        responseModalidades: ["AUDIO"],
+                        speechConfig: {
+                            voiceConfig: {
+                                prebuiltVoiceConfig: { voiceName: "Kore" }
+                            }
+                        }
+                    },
+                    model: "gemini-2.5-flash-preview-tts"
+                };
+                
+                const apiKey = "AIzaSyCKHAPJJs8Upl_Y4u9JSW2lgcjBSuCilIg"; 
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
+
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const result = await response.json();
+                    const part = result?.candidates?.[0]?.content?.parts?.[0];
+                    const audioData = part?.inlineData?.data;
+                    const mimeType = part?.inlineData?.mimeType;
+
+                    if (audioData && mimeType && mimeType.startsWith("audio/")) {
+                        const sampleRate = parseInt(mimeType.match(/rate=(\d+)/)[1], 10);
+                        const pcmData = base64ToArrayBuffer(audioData);
+                        const pcm16 = new Int16Array(pcmData);
+                        const wavBlob = pcmToWav(pcm16, sampleRate);
+                        const audioUrl = URL.createObjectURL(wavBlob);
+                        const audio = new Audio(audioUrl);
+                        audio.play();
+                    }
+                } catch (error) {
+                    console.error("Error al leer la pregunta:", error);
+                } finally {
+                    ttsButton.disabled = false;
+                }
+            }
+            
+            // --- Llamada a la API de Gemini para la explicación de la respuesta ---
+            async function explainAnswer() {
+                const currentQuestion = questions[currentQuestionIndex - 1];
+                if (!currentQuestion) {
+                    return;
+                }
+
+                explanationContainer.classList.remove('hidden');
+                explanationContent.textContent = '';
+                explanationLoader.classList.remove('hidden');
+                explainButton.disabled = true;
+
+                // El prompt también es en español para la explicación.
+                const prompt = `Proporciona una explicación detallada en español para la siguiente pregunta y respuesta de trivia. Incluye algunos datos curiosos y relacionados para hacerlo más interesante.
+                
+                Pregunta: ${currentQuestion.text}
+                Respuesta: ${currentQuestion.correct_answer}`;
+                
+                const chatHistory = [];
+                chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+
+                const payload = { contents: chatHistory };
+
+                const apiKey = "AIzaSyCKHAPJJs8Upl_Y4u9JSW2lgcjBSuCilIg"; 
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        console.error('Error de respuesta de la API:', errorData);
+                        throw new Error(`Error HTTP: ${response.status}`);
+                    }
+                    const result = await response.json();
+                    const explanation = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+                    explanationContent.textContent = explanation;
+                } catch (error) {
+                    console.error("Error al obtener la explicación:", error);
+                    explanationContent.textContent = "No se pudo obtener la explicación. Inténtalo de nuevo.";
+                } finally {
+                    explanationLoader.classList.add('hidden');
+                    explainButton.disabled = false;
+                }
+            }
+
+            // Función para mostrar la retroalimentación animada
+            function showFeedback(isCorrect) {
+                feedbackOverlay.classList.add('show');
+                
+                if (isCorrect) {
+                    feedbackOverlay.classList.add('feedback-correct');
+                    feedbackOverlay.classList.remove('feedback-incorrect');
+                    feedbackIcon.textContent = '✓';
+                    feedbackMessage.textContent = '¡Respuesta Correcta!';
+                    correctSound.triggerAttackRelease('C4', '8n');
+                } else {
+                    feedbackOverlay.classList.remove('feedback-correct');
+                    feedbackOverlay.classList.add('feedback-incorrect');
+                    feedbackIcon.textContent = '✗';
+                    feedbackMessage.textContent = 'Respuesta Incorrecta.';
+                    incorrectSound.triggerAttackRelease('C2', '8n');
+                }
+
+                setTimeout(() => {
+                    feedbackOverlay.classList.remove('show');
+                    checkWinner();
+                    nextQuestionButton.disabled = false;
+                }, 2000); // Duración de la animación
+            }
+
+            // Event listener para el botón de siguiente pregunta
+            nextQuestionButton.addEventListener('click', () => {
+                if (questions.length === 0) {
+                    panelMessage.textContent = "Primero genera preguntas con un tema.";
+                    return;
+                }
+                if (currentQuestionIndex >= questions.length) {
+                    panelTitle.textContent = "¡Fin del juego!";
+                    panelMessage.textContent = "Todas las preguntas han sido respondidas. El ganador es...";
+                    checkWinner();
+                    return;
+                }
+                
+                const currentQuestion = questions[currentQuestionIndex];
+                
+                // Mostrar la pregunta
+                panelTitle.textContent = `PREGUNTA ${currentQuestionIndex + 1}:`;
+                panelMessage.textContent = currentQuestion.text;
+                
+                // Mezcla la respuesta correcta con las incorrectas
+                const allOptions = [currentQuestion.correct_answer, ...currentQuestion.incorrect_answers];
+                shuffleArray(allOptions);
+                
+                // Log de depuración para verificar el contenido de las opciones
+                console.log("Opciones de respuesta:", allOptions);
+                
+                // Asigna cada opción a un botón y lo hace visible
+                optionButtons.forEach((button, index) => {
+                    button.classList.remove('selected', 'correct', 'incorrect');
+                    // Asigna el texto al span interno del botón
+                    const span = button.querySelector('span');
+                    if (span) {
+                        span.textContent = allOptions[index];
+                    }
+                    button.disabled = true; // Deshabilita opciones hasta que se presione un buzzer
+                });
+                
+                // Hace visible el contenedor de opciones.
+                optionsContainer.classList.remove('hidden');
+
+                // Ocultar el botón de comprobar respuesta al inicio de cada pregunta
+                checkAnswerButton.classList.add('hidden');
+                checkAnswerButton.disabled = true;
+
+                nextQuestionButton.disabled = true;
+                enableBuzzers();
+                ttsButton.disabled = false;
+                explainButton.disabled = true;
+                
+                // Avanzar a la siguiente pregunta para la próxima ronda
+                currentQuestionIndex++;
+            });
+
+            // Event listener para el buzzer de cada equipo
+            teams.forEach(team => {
+                const buzzer = document.getElementById(team.buzzerId);
+                buzzer.addEventListener('click', () => {
+                    if (buzzerLocked) {
+                        return;
+                    }
+                    
+                    buzzerLocked = true;
+                    activeTeam = team;
+                    
+                    // Mostrar el icono del buzzer
+                    buzzerIcon.classList.remove('hidden');
+                    
+                    const teamName = document.getElementById(team.nameInputId).value || document.getElementById(team.nameInputId).placeholder;
+                    panelTitle.textContent = `¡${teamName} ha presionado el buzzer!`;
+                    panelMessage.textContent = "El moderador puede hacer clic en la opción que elijan.";
+                    
+                    teams.forEach(t => {
+                        const b = document.getElementById(t.buzzerId);
+                        b.disabled = true;
+                        b.classList.add('disabled');
+                    });
+                    
+                    document.getElementById(team.cardId).classList.add('active-glow');
+                    ttsButton.disabled = true;
+                    explainButton.disabled = false;
+
+                    // Habilitar opciones para que el moderador haga clic
+                    optionButtons.forEach(button => {
+                        button.disabled = false;
+                    });
+                });
+            });
+
+            // Event listener para los botones de opciones
+            optionButtons.forEach(button => {
+                button.addEventListener('click', (e) => {
+                    // Ahora obtenemos el texto del span interno
+                    selectedAnswer = e.currentTarget.querySelector('span').textContent;
+                    optionButtons.forEach(btn => {
+                        btn.classList.remove('selected');
+                    });
+                    e.currentTarget.classList.add('selected');
+                    // Habilitar y mostrar el botón de comprobación
+                    checkAnswerButton.classList.remove('hidden');
+                    checkAnswerButton.disabled = false;
+                });
+            });
+
+            // Event listener para el botón de comprobar respuesta
+            checkAnswerButton.addEventListener('click', () => {
+                if (!activeTeam || !selectedAnswer) {
+                    return;
+                }
+
+                const currentQuestion = questions[currentQuestionIndex - 1];
+                const isCorrect = selectedAnswer === currentQuestion.correct_answer;
+                
+                if (isCorrect) {
+                    activeTeam.score += currentQuestion.points;
+                    updateTeamUI(activeTeam);
+                    showFeedback(true);
+                } else {
+                    showFeedback(false);
+                }
+
+                checkAnswerButton.disabled = true;
+                
+                // Resaltar las respuestas correctas/incorrectas para la audiencia
+                optionButtons.forEach(button => {
+                    const buttonText = button.querySelector('span').textContent;
+                    if (buttonText === currentQuestion.correct_answer) {
+                        button.classList.add('correct');
+                    }
+                    if (buttonText === selectedAnswer && !isCorrect) {
+                        button.classList.add('incorrect');
+                    }
+                    button.disabled = true;
+                });
+                
+                explainButton.disabled = false;
+            });
+
+            // Funcionalidad del botón de reiniciar
+            restartButton.addEventListener('click', () => {
+                teams.forEach(team => {
+                    team.score = 0;
+                    updateTeamUI(team);
+                });
+                winnerPopup.classList.add('hidden');
+                
+                // Limpiar las preguntas existentes
+                questions.length = 0;
+                currentQuestionIndex = 0;
+                
+                panelTitle.textContent = "Esperando...";
+                panelMessage.textContent = "Pulsa 'Generar Preguntas' para empezar la ronda.";
+                enableBuzzers();
+                ttsButton.disabled = true;
+                explainButton.disabled = true;
+                nextQuestionButton.disabled = true;
+                optionsContainer.classList.add('hidden');
+                checkAnswerButton.classList.add('hidden');
+            });
+            
+            // Nuevos listeners de eventos
+            generateQuestionsButton.addEventListener('click', generateQuestions);
+            ttsButton.addEventListener('click', readQuestion);
+            explainButton.addEventListener('click', explainAnswer);
+            
+            // Llamada inicial para configurar las cámaras de todos los equipos
+            teams.forEach(team => setupCameraForTeam(team.id));
+        });
+    </script>
+</body>
+</html>
